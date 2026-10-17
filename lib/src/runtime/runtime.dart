@@ -15,3 +15,11 @@ String get runningPlatform =>
 /// The installed app version, such as `2.9.0`.
 Future<String> installedVersion() =>
     throw UnsupportedError('The installed version is unknown here.');
+
+/// The value stored under [key], or `null` if nothing is stored.
+Future<String?> readStoredValue(String key) =>
+    throw UnsupportedError('Storage is not supported here.');
+
+/// Stores [value] under [key].
+Future<void> writeStoredValue(String key, String value) =>
+    throw UnsupportedError('Storage is not supported here.');

@@ -1,3 +1,11 @@
+## 1.1.0
+
+- `AppChangelog.track()` remembers the last version whose release notes the user has seen, stored with `shared_preferences`. Call it once before `runApp`.
+- `AppChangelog.isNewInstall` and `AppChangelog.didUpdate` tell a new install from an update, and `AppChangelog.previousVersion` returns the last version marked as seen.
+- `AppChangelog.markVersionSeen()` stores the installed version as seen. It never stores a lower version.
+- `AppChangelog.unseenReleases()` returns every release since the last version marked as seen, so users who skip versions see everything they missed.
+- `isExistingInstall` lets apps that add tracking after launch count current users as updated, and `read`/`write` replace `shared_preferences` with your own storage.
+
 ## 1.0.0
 
 - Initial release.

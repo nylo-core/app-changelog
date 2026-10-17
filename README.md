@@ -41,6 +41,7 @@ print(release?.notes);
 
 - [Installation](#installation)
 - [Quick start](#quick-start)
+- [Tracking updates](#tracking-updates)
 - [Markdown format](#markdown-format)
 - [Querying a changelog](#querying-a-changelog)
 - [CI/CD integration](#cicd-integration)
@@ -56,7 +57,10 @@ flutter pub add app_changelog
 
 That's the only dependency you need. `app_changelog` uses
 [`package_info_plus`](https://pub.dev/packages/package_info_plus) internally
-to read the installed version, so you don't have to add it yourself.
+to read the installed version, and
+[`shared_preferences`](https://pub.dev/packages/shared_preferences) to
+remember the last version a user has seen, so you don't have to add either
+yourself.
 
 ## Quick start
 
@@ -116,8 +120,106 @@ Future<void> showWhatsNew(BuildContext context) async {
 }
 ```
 
-Deciding when to show the notes, for example only once per version, is up to
-your app. You could use `shared_preferences` to store the last version shown.
+**4. Show them once per version.** Call `AppChangelog.track()` before
+`runApp`, then show the notes when the user has updated:
+
+```dart
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppChangelog.track();
+  runApp(const MyApp());
+}
+```
+
+```dart
+if (AppChangelog.didUpdate) {
+  await showWhatsNew(context);
+  await AppChangelog.markVersionSeen();
+}
+```
+
+See [Tracking updates](#tracking-updates) for the details.
+
+## Tracking updates
+
+`AppChangelog.track()` remembers the last version whose notes the user has
+seen, so your app can tell a new install from an update. Call it once, before
+`runApp`:
+
+```dart
+await AppChangelog.track();
+
+AppChangelog.isNewInstall;    // true on the first launch after installing
+AppChangelog.didUpdate;       // true when the user has updated since the
+                              // last version marked as seen
+AppChangelog.previousVersion; // the last version marked as seen, if any
+
+await AppChangelog.markVersionSeen(); // didUpdate is false until the next update
+```
+
+- On a new install, `track()` stores the installed version straight away, so
+  `didUpdate` is `false` and the notes for the version the user just
+  installed aren't shown.
+- `didUpdate` stays `true` until you call `markVersionSeen()`. If your app
+  can't show the notes on one launch, for example because the user isn't
+  signed in, it can show them on the next.
+- `markVersionSeen()` never stores a lower version, so downgrades don't bring
+  old notes back.
+- Build metadata is ignored, so `2.9.1+41` isn't an update from `2.9.1+40`.
+- iOS and Android version histories are tracked separately, since each device
+  stores its own installed version.
+
+### Showing every release since the last update
+
+A user who jumps from `2.7.0` to `2.9.1` might have missed the notes for
+`2.8.0` and `2.9.0`. `unseenReleases()` returns every release on the current
+platform above the last version marked as seen, up to the installed version,
+newest first:
+
+```dart
+final List<PlatformRelease> releases = await AppChangelog.unseenReleases();
+for (final release in releases) {
+  print('${release.version}: ${release.notes}');
+}
+```
+
+Releases with no notes for the platform are skipped, and so are
+pre-releases unless the installed version is itself a pre-release. The list
+is empty when `didUpdate` is `false`.
+
+### Adding tracking to a published app
+
+Existing users have nothing stored yet, so by default they look like new
+installs. Pass `isExistingInstall` to tell them apart, using something your
+app already stores:
+
+```dart
+await AppChangelog.track(
+  isExistingInstall: () async => prefs.getBool('onboarding_done') ?? false,
+);
+```
+
+When it returns `true`, `didUpdate` is `true` and `previousVersion` is `null`.
+`unseenReleases()` then returns only the installed version's notes, not the
+whole history.
+
+### Storage
+
+The version is stored under the key `app_changelog.seen_version` with
+`shared_preferences`. Pass `key` to change it, or `read` and `write` to use
+your own storage instead:
+
+```dart
+final Box<String> box = await Hive.openBox<String>('settings');
+
+await AppChangelog.track(
+  read: (key) async => box.get(key),
+  write: (key, value) => box.put(key, value),
+);
+```
+
+In widget tests, set the stored version with
+`SharedPreferences.setMockInitialValues` before calling `track()`.
 
 ## Markdown format
 
@@ -369,6 +471,17 @@ Flutter apps and in scripts run with `dart run`.
 | `AppChangelog.latestRelease({platform, path, includePreReleases})` | The newest release on `platform` (default: this one), or `null`. |
 | `AppChangelog.currentPlatform`                               | The running platform's identifier, such as `ios`.                    |
 
+**Tracking updates.** Call `track()` first. Flutter only.
+
+| API                                                      | Description                                                                 |
+| -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `AppChangelog.track({key, read, write, isExistingInstall})` | Reads the last version marked as seen, and records new installs.            |
+| `AppChangelog.isNewInstall`                              | Whether this is the first launch since the app was installed.               |
+| `AppChangelog.didUpdate`                                 | Whether the installed version is newer than the last version marked as seen. |
+| `AppChangelog.previousVersion`                           | The last version marked as seen before this launch, or `null`.              |
+| `AppChangelog.markVersionSeen()`                         | Stores the installed version as seen.                                       |
+| `AppChangelog.unseenReleases({path})`                    | Releases since the last version marked as seen, newest first.               |
+
 **Queries on a loaded changelog.**
 
 | API                                                   | Description                                                        |
@@ -426,7 +539,9 @@ Validation covers:
 - unexpected Markdown content.
 
 Query methods throw an `ArgumentError` for an invalid platform identifier, and
-`find` throws a `FormatException` for an invalid version.
+`find` throws a `FormatException` for an invalid version. Using
+`isNewInstall`, `didUpdate`, `previousVersion`, `markVersionSeen` or
+`unseenReleases` before `AppChangelog.track()` throws a `StateError`.
 
 ## Limitations
 
@@ -447,9 +562,8 @@ Query methods throw an `ArgumentError` for an invalid platform identifier, and
 - **Flutter projects only.** The package depends on the Flutter SDK, so a
   pure Dart project (a server or a standalone CLI) can't add it. Scripts
   inside a Flutter project can still use it with `dart run`.
-- **No UI or persistence.** The package doesn't show UI or remember which
-  notes a user has seen. See [Quick start](#quick-start) for how to add
-  these.
+- **No UI.** The package returns notes but doesn't display them. See
+  [Quick start](#quick-start) for a dialog you can adapt.
 
 ## License
 

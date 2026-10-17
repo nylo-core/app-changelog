@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'fixtures.dart';
 
@@ -140,6 +141,126 @@ void main() {
         includePreReleases: false,
       );
       expect(latest?.version.isPreRelease, isFalse);
+    });
+  });
+
+  group('track', () {
+    const key = 'app_changelog.seen_version';
+
+    setUp(() {
+      resetTracking();
+      SharedPreferences.setMockInitialValues({});
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    });
+
+    Future<String?> storedVersion() async =>
+        (await SharedPreferences.getInstance()).getString(key);
+
+    test('stores a new install with shared_preferences', () async {
+      _mockInstalledVersion('2.9.0');
+      await AppChangelog.track();
+
+      expect(AppChangelog.isNewInstall, isTrue);
+      expect(AppChangelog.didUpdate, isFalse);
+      expect(AppChangelog.previousVersion, isNull);
+      expect(await storedVersion(), '2.9.0');
+    });
+
+    test('detects an update from shared_preferences', () async {
+      SharedPreferences.setMockInitialValues({key: '2.9.0'});
+      _mockInstalledVersion('4.0.0');
+      await AppChangelog.track();
+
+      expect(AppChangelog.isNewInstall, isFalse);
+      expect(AppChangelog.didUpdate, isTrue);
+      expect(AppChangelog.previousVersion, AppVersion.parse('2.9.0'));
+    });
+
+    test('marks the installed version as seen', () async {
+      SharedPreferences.setMockInitialValues({key: '2.9.0'});
+      _mockInstalledVersion('4.0.0');
+      await AppChangelog.track();
+      await AppChangelog.markVersionSeen();
+
+      expect(AppChangelog.didUpdate, isFalse);
+      expect(await storedVersion(), '4.0.0');
+    });
+
+    test('loads the unseen releases from the changelog', () async {
+      SharedPreferences.setMockInitialValues({key: '2.9.0'});
+      _mockInstalledVersion('4.0.0');
+      await AppChangelog.track();
+
+      final List<PlatformRelease> releases =
+          await AppChangelog.unseenReleases();
+      expect(
+        [for (final release in releases) release.version.toString()],
+        ['4.0.0', '3.12.1', '2.10.1'],
+      );
+      expect(
+          releases.every((release) => release.platform == 'android'), isTrue);
+    });
+
+    test('reads unseen releases from a custom path', () async {
+      SharedPreferences.setMockInitialValues({key: '2.9.0'});
+      _mockInstalledVersion('9.9.9');
+      await AppChangelog.track();
+
+      final List<PlatformRelease> releases =
+          await AppChangelog.unseenReleases(path: 'assets/release_notes.md');
+      expect(releases.single.notes, ['Custom path']);
+    });
+
+    test('has no unseen releases without an update', () async {
+      _mockInstalledVersion('2.9.0');
+      await AppChangelog.track();
+      expect(await AppChangelog.unseenReleases(path: 'broken.md'), isEmpty);
+    });
+
+    test('uses a custom key', () async {
+      _mockInstalledVersion('2.9.0');
+      await AppChangelog.track(key: 'whats_new');
+      expect(
+        (await SharedPreferences.getInstance()).getString('whats_new'),
+        '2.9.0',
+      );
+      expect(await storedVersion(), isNull);
+    });
+
+    test('uses custom storage instead of shared_preferences', () async {
+      final values = <String, String>{key: '2.9.0'};
+      _mockInstalledVersion('4.0.0');
+      await AppChangelog.track(
+        read: (key) async => values[key],
+        write: (key, value) async => values[key] = value,
+      );
+      await AppChangelog.markVersionSeen();
+
+      expect(values[key], '4.0.0');
+      expect(await storedVersion(), isNull);
+    });
+
+    test('passes isExistingInstall through', () async {
+      _mockInstalledVersion('2.9.0');
+      await AppChangelog.track(isExistingInstall: () async => true);
+
+      expect(AppChangelog.isNewInstall, isFalse);
+      expect(AppChangelog.didUpdate, isTrue);
+    });
+
+    test('throws when only one of read and write is given', () {
+      expect(
+        AppChangelog.track(read: (key) async => null),
+        throwsArgumentError,
+      );
+    });
+
+    test('throws when used before track', () {
+      expect(() => AppChangelog.isNewInstall, throwsStateError);
+      expect(() => AppChangelog.didUpdate, throwsStateError);
+      expect(() => AppChangelog.previousVersion, throwsStateError);
+      expect(AppChangelog.markVersionSeen, throwsStateError);
+      expect(AppChangelog.unseenReleases(), throwsStateError);
     });
   });
 }

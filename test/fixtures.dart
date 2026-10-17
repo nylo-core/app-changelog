@@ -2,7 +2,7 @@ import 'package:app_changelog/src/app_changelog.dart';
 import 'package:app_changelog/src/changelog_release.dart';
 
 export 'package:app_changelog/src/app_changelog.dart'
-    show changelogFromReleases;
+    show changelogFromReleases, resetTracking;
 export 'package:app_changelog/src/changelog_release.dart' show ChangelogRelease;
 
 /// Exposes the internal, unfiltered releases to tests.
