@@ -271,6 +271,14 @@ void main() {
       );
     });
 
+    test('checks each stacked heading as its own release', () {
+      expectConflict(
+        '## 1.2.1\n- a\n\n## @android: 1.2.1\n## @ios: 1.0.1\n- b\n',
+        4,
+        ['Ambiguous release 1.2.1', '"@android: 1.2.1" conflicts with "1.2.1"'],
+      );
+    });
+
     test('allows the same version on different platforms', () {
       final changelog = AppChangelog.parse(
         '## @ios: 2.9.0\n- a\n\n## @android: 2.9.0\n- b\n',

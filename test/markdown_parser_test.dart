@@ -209,6 +209,88 @@ Some introduction with - dashes and ### hashes.
       expect(changelog.releases[1].changes, isEmpty);
     });
 
+    test('parses dated release headings', () {
+      final changelog = AppChangelog.parse('''
+## 1.2.1 - 2024-01-31
+- Shared
+
+## @ios: 1.2.0 – 2023-12-01
+- iOS
+
+## 1.0.0
+- Initial
+''');
+      final List<ChangelogRelease> releases = changelog.releases;
+      expect(releases.map((r) => r.label), ['1.2.1', '@ios: 1.2.0', '1.0.0']);
+      expect(releases[0].date, DateTime.utc(2024, 1, 31));
+      expect(releases[1].date, DateTime.utc(2023, 12, 1));
+      expect(releases[2].date, isNull);
+      expect(
+        changelog.find(platform: 'ios', version: '1.2.1')?.date,
+        DateTime.utc(2024, 1, 31),
+      );
+    });
+
+    test('shares changes between stacked platform headings', () {
+      final changelog = AppChangelog.parse('''
+## @android: 1.2.1 - 2024-01-31
+
+## @ios: 1.0.1
+### iPad update
+- Shared
+- @android: Android only
+- @ios: iOS only
+
+## 1.0.0
+- Initial
+''');
+      expect(changelog.releases.map((r) => r.label), [
+        '@android: 1.2.1',
+        '@ios: 1.0.1',
+        '1.0.0',
+      ]);
+      expect(changelog.releases.map((r) => r.line), [1, 3, 9]);
+
+      final PlatformRelease? android =
+          changelog.find(platform: 'android', version: '1.2.1');
+      expect(android?.title, 'iPad update');
+      expect(android?.date, DateTime.utc(2024, 1, 31));
+      expect(android?.notes, ['Shared', 'Android only']);
+
+      final PlatformRelease? ios =
+          changelog.find(platform: 'ios', version: '1.0.1');
+      expect(ios?.title, 'iPad update');
+      expect(ios?.date, isNull);
+      expect(ios?.notes, ['Shared', 'iOS only']);
+
+      expect(changelog.find(platform: 'ios', version: '1.2.1'), isNull);
+      expect(changelog.find(platform: 'web', version: '1.0.1'), isNull);
+    });
+
+    test('does not stack shared headings', () {
+      final changelog = AppChangelog.parse('''
+## 2.0.0
+## @ios: 1.0.1
+## @android: 1.0.1
+- Fix
+
+## @web: 1.0.0
+## 0.9.0
+- Initial
+''');
+      expect(changelog.releases.map((r) => r.label), [
+        '2.0.0',
+        '@ios: 1.0.1',
+        '@android: 1.0.1',
+        '@web: 1.0.0',
+        '0.9.0',
+      ]);
+      expect(changelog.releases[0].changes, isEmpty);
+      expect(changelog.releases[1].changes.single.text, 'Fix');
+      expect(changelog.releases[2].changes.single.text, 'Fix');
+      expect(changelog.releases[3].changes, isEmpty);
+    });
+
     test('returns an empty changelog for empty input', () {
       expect(AppChangelog.parse('').releases, isEmpty);
       expect(AppChangelog.parse('# Changelog\n').releases, isEmpty);
@@ -295,6 +377,49 @@ Some introduction with - dashes and ### hashes.
           '"@android: Wrong" targets "android"',
           'release "@ios: 2.11.1" only applies to ios',
         ],
+      );
+    });
+
+    test('reports a change tagged for a platform outside stacked headings', () {
+      expectMarkdownError(
+        '## @android: 1.2.1\n## @ios: 1.0.1\n- Shared\n- @web: Wrong\n',
+        line: 4,
+        messageParts: [
+          '"@web: Wrong" targets "web"',
+          'release "@android: 1.2.1, @ios: 1.0.1" only applies to android and '
+              'ios',
+        ],
+      );
+    });
+
+    test('reports a platform repeated in stacked headings', () {
+      expectMarkdownError(
+        '## @ios: 2.0.0\n\n## @ios: 1.9.0\n- Fix\n',
+        line: 3,
+        messageParts: [
+          '"## @ios: 1.9.0" repeats the platform "ios"',
+          '"## @ios: 2.0.0" (line 1)',
+        ],
+      );
+    });
+
+    test('reports an invalid release date', () {
+      expectMarkdownError(
+        '## 1.0.0 - 2024-02-30\n',
+        line: 1,
+        messageParts: ['Invalid date "2024-02-30"', 'YYYY-MM-DD'],
+      );
+      expectMarkdownError(
+        '## @ios: 1.0.0 - Jan 1st\n',
+        line: 1,
+        messageParts: [
+          'Invalid date "Jan 1st" in release heading "## @ios: 1.0.0 - Jan 1st"',
+        ],
+      );
+      expectMarkdownError(
+        '## 1.0.0 -\n',
+        line: 1,
+        messageParts: ['Invalid date ""'],
       );
     });
 
