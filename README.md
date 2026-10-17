@@ -162,12 +162,13 @@ Anything before the first release heading is ignored.
 
 ### Release headings
 
-| Heading               | Applies to                    |
-| --------------------- | ----------------------------- |
-| `## 4.0.0`            | Every platform                |
-| `## @ios: 2.11.1`     | iOS only                      |
-| `## @android: 2.10.1` | Android only                  |
-| `## @web: 1.0.0`      | Any custom platform, e.g. web |
+| Heading                 | Applies to                                  |
+| ----------------------- | ------------------------------------------- |
+| `## 4.0.0`              | Every platform                              |
+| `## @ios: 2.11.1`       | iOS only                                    |
+| `## @android: 2.10.1`   | Android only                                |
+| `## @web: 1.0.0`        | Any custom platform, e.g. web               |
+| `## 4.0.0 - 2024-01-31` | Every platform, released on 31 January 2024 |
 
 - Versions must follow [semantic versioning](https://semver.org), such as
   `1.2.3`, `2.0.0-beta.1`, or `1.2.3+42`.
@@ -175,6 +176,30 @@ Anything before the first release heading is ignored.
   or `-`. They're case-insensitive: `@iOS` and `@ios` are the same platform.
 - `### Title` directly under a release heading sets an optional title. Without
   one, the title is `"What's new"`.
+- An optional release date follows the version after ` - `, written as
+  `YYYY-MM-DD`: `## 4.0.0 - 2024-01-31` or `## @ios: 2.11.1 - 2024-02-03`.
+  It's available as `date`, a `DateTime` at midnight UTC.
+
+### Shared notes across platform versions
+
+When several platforms ship the same notes under different version numbers,
+stack their headings. Platform-specific headings with nothing but blank lines
+between them share the title and changes below them:
+
+```markdown
+## @android: 1.2.1 - 2024-01-31
+## @ios: 1.0.1
+
+- iPad updates
+- @android: Some Google stuff
+- @ios: Some iOS stuff
+```
+
+Android 1.2.1 shows "iPad updates" and "Some Google stuff", and iOS 1.0.1
+shows "iPad updates" and "Some iOS stuff". Each heading is its own release, so
+each can have its own date, and changes can target any platform in the stack.
+Shared headings (`## 1.2.1`) never stack: a shared heading with no changes is
+an empty release.
 
 ### Changes
 
@@ -361,6 +386,7 @@ every query:
 | `platform` | The platform the notes are for, such as `ios`.                  |
 | `version`  | The release's version on that platform (`AppVersion`).          |
 | `title`    | The release title, `"What's new"` by default.                   |
+| `date`     | The release date on that platform (`DateTime?`).                |
 | `changes`  | The filtered `List<ChangelogChange>`, in source order.          |
 | `notes`    | The changes' display text as a `List<String>`.                  |
 | `isEmpty`  | Whether the platform has no changes to show.                    |
@@ -391,7 +417,9 @@ ChangelogFormatException: Line 31: Ambiguous release 2.9.0: a shared release and
 Validation covers:
 
 - invalid versions and platform identifiers,
+- invalid release dates,
 - changes that target a platform outside their release,
+- a platform repeated in stacked headings,
 - empty changes and empty titles,
 - duplicate releases for the same platform and version,
 - a shared release and a platform-specific release with the same version, and
@@ -406,10 +434,11 @@ Query methods throw an `ArgumentError` for an invalid platform identifier, and
   `### Fixed`) aren't supported, and nested lists are rejected.
 - **Strict headings.** `## Unreleased`, `## [1.2.0] - 2024-01-01`, and
   `## v1.2.0` aren't valid release headings. Headings must be exactly
-  `## <version>` or `## @platform: <version>`.
+  `## <version>` or `## @platform: <version>`, optionally followed by
+  ` - YYYY-MM-DD`.
 - **One platform per change or heading.** A release is either shared or for a
   single platform. To give several, but not all, platforms the same notes,
-  write a release heading for each.
+  [stack their headings](#shared-notes-across-platform-versions).
 - **Plain text.** Change text is returned exactly as written. Inline Markdown
   such as `**bold**` or links isn't rendered or stripped.
 - **Semantic versions only.** Two-part versions such as `2.9` are rejected.

@@ -11,7 +11,7 @@ import 'version_comparator.dart';
 /// Use [forPlatform] to get the notes a particular platform should display.
 class ChangelogRelease {
   /// Creates a release at [version] that applies to every platform, or only
-  /// to [platform] when given.
+  /// to [platform] when given, optionally released on [date].
   ///
   /// Throws a [ChangelogFormatException] if [platform] is not a valid
   /// identifier, [title] is empty, or a change in a platform-specific
@@ -20,6 +20,7 @@ class ChangelogRelease {
     AppVersion version, {
     String? platform,
     String? title,
+    DateTime? date,
     Iterable<ChangelogChange> changes = const [],
     int? line,
   }) {
@@ -28,6 +29,7 @@ class ChangelogRelease {
       platform:
           platform == null ? null : normalizePlatform(platform, line: line),
       title: _checkTitle(title, line),
+      date: date,
       changes: List.unmodifiable(changes),
       line: line,
     );
@@ -51,6 +53,7 @@ class ChangelogRelease {
     required this.version,
     required this.platform,
     required this.title,
+    required this.date,
     required this.changes,
     required this.line,
   });
@@ -67,6 +70,10 @@ class ChangelogRelease {
 
   /// The release title, [defaultTitle] when none was given.
   final String title;
+
+  /// The release date, such as the `2024-01-01` in `## 1.2.1 - 2024-01-01`,
+  /// or `null` if none was given.
+  final DateTime? date;
 
   /// Every change in the release, in source order, including changes that
   /// target specific platforms.
@@ -102,6 +109,7 @@ class ChangelogRelease {
       platform: normalized,
       version: version,
       title: title,
+      date: date,
       changes: List.unmodifiable(
         changes.where((change) => change.appliesTo(normalized)),
       ),
@@ -114,11 +122,12 @@ class ChangelogRelease {
       other.version == version &&
       other.platform == platform &&
       other.title == title &&
+      other.date == date &&
       _listEquals(other.changes, changes);
 
   @override
   int get hashCode =>
-      Object.hash(version, platform, title, Object.hashAll(changes));
+      Object.hash(version, platform, title, date, Object.hashAll(changes));
 
   @override
   String toString() =>
@@ -144,6 +153,7 @@ class PlatformRelease {
     required this.platform,
     required this.version,
     required this.title,
+    required this.date,
     required this.changes,
   });
 
@@ -155,6 +165,9 @@ class PlatformRelease {
 
   /// The release title.
   final String title;
+
+  /// The release date on [platform], or `null` if none was given.
+  final DateTime? date;
 
   /// The changes to display on [platform], in source order, without platform
   /// prefixes.
@@ -172,11 +185,12 @@ class PlatformRelease {
       other.platform == platform &&
       other.version == version &&
       other.title == title &&
+      other.date == date &&
       _listEquals(other.changes, changes);
 
   @override
   int get hashCode =>
-      Object.hash(platform, version, title, Object.hashAll(changes));
+      Object.hash(platform, version, title, date, Object.hashAll(changes));
 
   @override
   String toString() =>
