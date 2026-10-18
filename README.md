@@ -392,33 +392,49 @@ with `AppChangelog.parse(markdown)`.
 
 ## CI/CD integration
 
-A CI job can read the changelog and use the latest version for each platform
-as the Flutter **build name**. Build numbers stay the responsibility of your
-CI/CD platform.
+`app_changelog` comes with a command line, so the version in your changelog
+heading can be the version you ship. Run it from your Flutter project with
+`dart run`.
 
-Copy [`example/ci_latest_version.dart`](example/ci_latest_version.dart) into
-your Flutter project, for example as `tool/latest_version.dart`. It runs with
-plain `dart run`, where `AppChangelog.load` reads from the file system
-instead of the asset bundle.
+### Build names from the changelog
+
+`version` prints the newest version, ready for Flutter's `--build-name`:
 
 ```sh
-$ dart run tool/latest_version.dart CHANGELOG.md ios
+$ dart run app_changelog version --platform ios
 2.11.1
 
-$ dart run tool/latest_version.dart CHANGELOG.md ios android
-ios=2.11.1
-android=2.10.1
+flutter build ipa --build-name=$(dart run app_changelog version --platform ios)
+flutter build appbundle --build-name=$(dart run app_changelog version --platform android)
 ```
 
-The script exits with a non-zero code if the changelog is malformed or a
-platform has no stable release, so a broken changelog fails the build.
+`--build-name` sets Android's `versionName` and iOS's `FLUTTER_BUILD_NAME`,
+which the Flutter template's `Info.plist` uses as the app version. Build
+numbers stay the responsibility of your CI/CD platform, so build metadata
+(`+42`) is dropped.
+
+- **Without `--platform`**, it reads the platform folders in your project
+  (`android`, `ios`, `web`, ...) and prints their version if they all agree.
+  If a platform-specific release gives them different versions, it fails and
+  asks you to pass `--platform`.
+- **With several platforms**, it prints `platform=version` lines, which you
+  can append to `$GITHUB_OUTPUT`:
+
+  ```sh
+  $ dart run app_changelog version --platform ios,android
+  ios=2.11.1
+  android=2.9.0
+  ```
+
+- **Pre-releases** such as `2.0.0-beta.1` are skipped, since store build names
+  must be `MAJOR.MINOR.PATCH`. Pass `--pre-releases` to include them.
 
 **GitHub Actions:**
 
 ```yaml
 - name: Read build names from CHANGELOG.md
   id: versions
-  run: dart run tool/latest_version.dart CHANGELOG.md ios android >> "$GITHUB_OUTPUT"
+  run: dart run app_changelog version --platform ios,android >> "$GITHUB_OUTPUT"
 
 - name: Build iOS
   run: >
@@ -436,23 +452,63 @@ platform has no stable release, so a broken changelog fails the build.
 **Any shell-based CI (Codemagic, Bitrise, GitLab CI, ...):**
 
 ```sh
-BUILD_NAME="$(dart run tool/latest_version.dart CHANGELOG.md android)"
+BUILD_NAME="$(dart run app_changelog version --platform android)"
 flutter build appbundle --build-name="$BUILD_NAME" --build-number="$BUILD_NUMBER"
 ```
 
-The core of the script is short enough to inline in your own tooling:
+### Checking the changelog before a release
+
+`check` fails the build before anything ships with the wrong notes:
+
+```sh
+$ dart run app_changelog check
+android 2.9.0 (3 notes)
+ios 2.11.1 (1 note)
+CHANGELOG.md is ready to release.
+```
+
+It fails when:
+
+- the changelog can't be parsed (the error names the line),
+- a platform has no release,
+- a platform's newest release has no notes for it, such as a shared
+  `## 1.2.1` whose only note is `- @android: ...`. The fix is usually the
+  heading `## @android: 1.2.1`, and the message says so, or
+- `pubspec.yaml` is at a newer version than any release in the changelog,
+  which usually means the release notes were forgotten. A `pubspec.yaml`
+  behind the changelog is fine, since `--build-name` sets the version.
+
+It also warns, without failing, when `ios/Runner/Info.plist` or
+`macos/Runner/Info.plist` doesn't read its version from
+`$(FLUTTER_BUILD_NAME)`. In that case, `--build-name` won't change the version
+on that platform.
+
+### Options
+
+| Option              | Description                                                                 |
+| ------------------- | --------------------------------------------------------------------------- |
+| `--platform <name>` | A platform to read. Repeat it, or separate names with commas. Defaults to the project's platform folders. |
+| `--path <file>`     | The changelog to read. Defaults to `CHANGELOG.md`.                          |
+| `--pre-releases`    | Include pre-releases.                                                       |
+
+Both commands exit with `0` on success, `1` when a check fails or a platform
+has no release, `64` for invalid arguments, `65` for a malformed changelog,
+and `66` when the changelog file is missing.
+
+### From your own scripts
+
+Scripts run with `dart run` can also use the library directly, where
+`AppChangelog.load` reads from the file system instead of the asset bundle:
 
 ```dart
 import 'package:app_changelog/app_changelog.dart';
 
 Future<void> main() async {
-  for (final platform in ['ios', 'android']) {
-    final latest = await AppChangelog.latestRelease(
-      platform: platform,
-      includePreReleases: false,
-    );
-    print('$platform=${latest?.version}');
-  }
+  final latest = await AppChangelog.latestRelease(
+    platform: 'ios',
+    includePreReleases: false,
+  );
+  print(latest?.version);
 }
 ```
 
@@ -481,6 +537,14 @@ Flutter apps and in scripts run with `dart run`.
 | `AppChangelog.previousVersion`                           | The last version marked as seen before this launch, or `null`.              |
 | `AppChangelog.markVersionSeen()`                         | Stores the installed version as seen.                                       |
 | `AppChangelog.unseenReleases({path})`                    | Releases since the last version marked as seen, newest first.               |
+
+**Command line.** Run from your project with `dart run`. See
+[CI/CD integration](#cicd-integration).
+
+| Command                                   | Description                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------ |
+| `dart run app_changelog version`          | Prints the newest version, for `flutter build --build-name`.       |
+| `dart run app_changelog check`            | Fails if the changelog isn't ready to release.                     |
 
 **Queries on a loaded changelog.**
 
@@ -561,7 +625,8 @@ Query methods throw an `ArgumentError` for an invalid platform identifier, and
   `1.0.0+2` count as the same release.
 - **Flutter projects only.** The package depends on the Flutter SDK, so a
   pure Dart project (a server or a standalone CLI) can't add it. Scripts
-  inside a Flutter project can still use it with `dart run`.
+  inside a Flutter project, and the `dart run app_changelog` commands, still
+  work.
 - **No UI.** The package returns notes but doesn't display them. See
   [Quick start](#quick-start) for a dialog you can adapt.
 

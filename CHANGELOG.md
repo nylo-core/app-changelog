@@ -1,3 +1,10 @@
+## 1.2.0
+
+- `dart run app_changelog version` prints the newest version in `CHANGELOG.md`, ready for `flutter build --build-name`. Pass `--platform ios` for one platform or `--platform ios,android` for `platform=version` lines. Without `--platform`, it reads the project's platform folders.
+- `dart run app_changelog check` fails a release when the changelog can't be parsed, a platform has no release or no notes, or `pubspec.yaml` is ahead of the changelog. It warns when `Info.plist` doesn't read `$(FLUTTER_BUILD_NAME)`, since `--build-name` then won't change the iOS or macOS version.
+- Both commands skip pre-releases unless `--pre-releases` is passed, and read another changelog with `--path`.
+- The README's CI/CD section uses the new commands. `example/ci_latest_version.dart` is removed, since `version` replaces it.
+
 ## 1.1.0
 
 - `AppChangelog.track()` remembers the last version whose release notes the user has seen, stored with `shared_preferences`. Call it once before `runApp`.
